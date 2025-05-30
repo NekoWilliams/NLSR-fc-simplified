@@ -22,12 +22,18 @@
 #include "routing-calculator.hpp"
 #include "name-map.hpp"
 #include "nexthop.hpp"
-
 #include "adjacent.hpp"
 #include "logger.hpp"
 #include "nlsr.hpp"
+#include "lsa/name-lsa.hpp"
+#include "conf-parameter.hpp"
 
 #include <boost/multi_array.hpp>
+#include <cstdint>
+#include <string>
+#include <vector>
+#include <memory>
+#include <optional>
 
 namespace nlsr {
 namespace {
@@ -308,38 +314,85 @@ calculateDijkstraPath(const AdjMatrix& matrix, int sourceRouter, const Lsdb& lsd
   return DijkstraResult{std::move(parent), std::move(distance)};
 }
 
-/**
- * @brief Insert shortest paths into the routing table.
- */
+double
+calculateServiceCost(const std::shared_ptr<NameLsa>& nameLsa, const ConfParameter& confParam)
+{
+  if (!nameLsa || nameLsa->getServiceName().empty()) {
+    return INF_DISTANCE;
+  }
+
+  double processingTimeWeight = confParam.getProcessingTimeWeight();
+  double loadWeight = confParam.getLoadWeight();
+
+  double normalizedProcessingTime = nameLsa->getProcessingTime() / 1000.0; // Convert to seconds
+  double loadIndex = nameLsa->getLoadIndex();
+
+  return (processingTimeWeight * normalizedProcessingTime) + (loadWeight * loadIndex);
+}
+
 void
 addNextHopsToRoutingTable(RoutingTable& rt, const NameMap& map, int sourceRouter,
-                          const AdjacencyList& adjacencies, const DijkstraResult& dr)
+                         const AdjacencyList& adjacencies, const DijkstraResult& dr,
+                         const Lsdb& lsdb, const ConfParameter& confParam)
 {
-  NLSR_LOG_DEBUG("addNextHopsToRoutingTable Called");
-  int nRouters = static_cast<int>(map.size());
+  auto thisRouter = map.getRouterNameByMappingNo(sourceRouter);
+  if (!thisRouter) {
+    return;
+  }
 
-  // For each router we have
-  for (int i = 0; i < nRouters; ++i) {
-    if (i == sourceRouter) {
+  // For each destination router
+  for (size_t i = 0; i < map.size(); ++i) {
+    if (i == static_cast<size_t>(sourceRouter)) {
       continue;
     }
 
-    // Obtain the next hop that was determined by the algorithm
+    auto destRouter = map.getRouterNameByMappingNo(i);
+    if (!destRouter) {
+      continue;
+    }
+
+    // Get the LSA for the destination router
+    auto lsa = lsdb.findLsa<NameLsa>(*destRouter);
+    if (!lsa) {
+      continue;
+    }
+
+    // Calculate service cost
+    double serviceCost = calculateServiceCost(lsa, confParam);
+    
+    // Get the next hop and link cost from Dijkstra
     int nextHopRouter = dr.getNextHop(i, sourceRouter);
     if (nextHopRouter == NO_NEXT_HOP) {
       continue;
     }
-    // If this router is accessible at all
 
-    // Fetch its distance
-    double routeCost = dr.distance[i];
-    // Fetch its actual name
     auto nextHopRouterName = map.getRouterNameByMappingNo(nextHopRouter);
-    BOOST_ASSERT(nextHopRouterName.has_value());
-    auto nextHopFace = adjacencies.getAdjacent(*nextHopRouterName).getFaceUri();
+    if (!nextHopRouterName) {
+      continue;
+    }
+
+    // Find the face for the next hop
+    ndn::optional<uint64_t> nextHopFace;
+    double routeCost = 0.0;
+    
+    for (const auto& adjacent : adjacencies) {
+      if (adjacent.getName() == *nextHopRouterName) {
+        nextHopFace = adjacent.getFaceId();
+        routeCost = adjacent.getLinkCost();
+        break;
+      }
+    }
+
+    if (!nextHopFace) {
+      continue;
+    }
+
+    // Combine link cost and service cost
+    double totalCost = routeCost + serviceCost;
+
     // Add next hop to routing table
-    NextHop nh(nextHopFace, routeCost);
-    rt.addNextHop(*map.getRouterNameByMappingNo(i), nh);
+    NextHop nh(*nextHopFace, totalCost);
+    rt.addNextHop(*destRouter, nh);
   }
 }
 
@@ -364,7 +417,7 @@ calculateLinkStateRoutingPath(NameMap& map, RoutingTable& rt, ConfParameter& con
     // In the single path case we can simply run Dijkstra's algorithm.
     auto dr = calculateDijkstraPath(matrix, *sourceRouter, lsdb, map);
     // Inform the routing table of the new next hops.
-    addNextHopsToRoutingTable(rt, map, *sourceRouter, confParam.getAdjacencyList(), dr);
+    addNextHopsToRoutingTable(rt, map, *sourceRouter, confParam.getAdjacencyList(), dr, lsdb, confParam);
   }
   else {
     // Multi Path
@@ -377,7 +430,7 @@ calculateLinkStateRoutingPath(NameMap& map, RoutingTable& rt, ConfParameter& con
       // Do Dijkstra's algorithm using the current neighbor as your start.
       auto dr = calculateDijkstraPath(matrix, *sourceRouter, lsdb, map);
       // Update the routing table with the calculations.
-      addNextHopsToRoutingTable(rt, map, *sourceRouter, confParam.getAdjacencyList(), dr);
+      addNextHopsToRoutingTable(rt, map, *sourceRouter, confParam.getAdjacencyList(), dr, lsdb, confParam);
     }
   }
 }

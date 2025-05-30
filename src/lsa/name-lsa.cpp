@@ -41,24 +41,37 @@ NameLsa::NameLsa(const ndn::Block& block)
 
 template<ndn::encoding::Tag TAG>
 size_t
-NameLsa::wireEncode(ndn::EncodingImpl<TAG>& block) const
+NameLsa::wireEncode(ndn::EncodingImpl<TAG>& encoder) const
 {
   size_t totalLength = 0;
 
-  // Encode service function chaining information
-  if (!m_serviceName.empty()) {
-    totalLength += prependStringBlock(block, nlsr::tlv::ServiceName, m_serviceName);
-  }
-  totalLength += prependNonNegativeDoubleBlock(block, nlsr::tlv::ProcessingTime, m_processingTime);
-  totalLength += prependNonNegativeDoubleBlock(block, nlsr::tlv::LoadIndex, m_loadIndex);
-
-  // Encode name prefix list
+  // Encode backwards
   for (const auto& name : m_npl) {
-    totalLength += name.wireEncode(block);
+    totalLength += name.wireEncode(encoder);
   }
 
-  totalLength += block.prependVarNumber(totalLength);
-  totalLength += block.prependVarNumber(nlsr::tlv::NameLsa);
+  // Encode service information
+  if (!m_serviceName.empty()) {
+    size_t serviceNameLength = encoder.prependByteArray(
+      reinterpret_cast<const uint8_t*>(m_serviceName.data()), m_serviceName.size());
+    totalLength += encoder.prependVarNumber(serviceNameLength);
+    totalLength += encoder.prependVarNumber(tlv::ServiceName);
+  }
+
+  // Encode processing time
+  if (m_processingTime > 0) {
+    totalLength += prependDoubleBlock(encoder, tlv::ProcessingTime, m_processingTime);
+  }
+
+  // Encode load index
+  if (m_loadIndex > 0) {
+    totalLength += prependDoubleBlock(encoder, tlv::LoadIndex, m_loadIndex);
+  }
+
+  totalLength += Lsa::wireEncode(encoder);
+
+  totalLength += encoder.prependVarNumber(totalLength);
+  totalLength += encoder.prependVarNumber(tlv::NameLsa);
 
   return totalLength;
 }
@@ -87,29 +100,28 @@ void
 NameLsa::wireDecode(const ndn::Block& wire)
 {
   m_wire = wire;
-
-  if (m_wire.type() != nlsr::tlv::NameLsa) {
-    NDN_THROW(Error("NameLsa", m_wire.type()));
-  }
-
   m_wire.parse();
-  auto val = m_wire.elements_begin();
 
-  for (; val != m_wire.elements_end(); ++val) {
-    if (val->type() == nlsr::tlv::ServiceName) {
-      m_serviceName = readString(*val);
+  Lsa::wireDecode(m_wire);
+
+  m_npl.clear();
+  m_serviceName.clear();
+  m_processingTime = 0.0;
+  m_loadIndex = 0.0;
+
+  for (const auto& element : m_wire.elements()) {
+    if (element.type() == tlv::PrefixInfo) {
+      m_npl.insert(PrefixInfo(element));
     }
-    else if (val->type() == nlsr::tlv::ProcessingTime) {
-      m_processingTime = readNonNegativeDouble(*val);
+    else if (element.type() == tlv::ServiceName) {
+      m_serviceName = std::string(reinterpret_cast<const char*>(element.value()),
+                                element.value_size());
     }
-    else if (val->type() == nlsr::tlv::LoadIndex) {
-      m_loadIndex = readNonNegativeDouble(*val);
+    else if (element.type() == tlv::ProcessingTime) {
+      m_processingTime = decodeDouble(element);
     }
-    else if (val->type() == nlsr::tlv::NameLsa) {
-      m_npl.wireDecode(*val);
-    }
-    else {
-      NDN_THROW(Error("Unexpected TLV type", val->type()));
+    else if (element.type() == tlv::LoadIndex) {
+      m_loadIndex = decodeDouble(element);
     }
   }
 }

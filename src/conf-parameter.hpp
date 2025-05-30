@@ -486,6 +486,58 @@ public:
   void
   writeLog();
 
+  class Error : public std::runtime_error
+  {
+  public:
+    explicit
+    Error(const std::string& what)
+      : std::runtime_error(what)
+    {
+    }
+  };
+
+  void
+  setProcessingTimeWeight(double weight)
+  {
+    if (weight < 0.0 || weight > 1.0) {
+      NDN_THROW(Error("Processing time weight must be between 0 and 1"));
+    }
+    m_processingTimeWeight = weight;
+  }
+
+  double
+  getProcessingTimeWeight() const
+  {
+    return m_processingTimeWeight;
+  }
+
+  void
+  setLoadWeight(double weight)
+  {
+    if (weight < 0.0 || weight > 1.0) {
+      NDN_THROW(Error("Load weight must be between 0 and 1"));
+    }
+    m_loadWeight = weight;
+  }
+
+  double
+  getLoadWeight() const
+  {
+    return m_loadWeight;
+  }
+
+  void
+  setServiceEnabled(bool enabled)
+  {
+    m_serviceEnabled = enabled;
+  }
+
+  bool
+  isServiceEnabled() const
+  {
+    return m_serviceEnabled;
+  }
+
 PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   std::string m_confFileName;
   std::string m_confFileNameDynamic;
@@ -528,6 +580,10 @@ private:
   ndn::time::milliseconds m_syncInterestLifetime;
 
   SyncProtocol m_syncProtocol = SyncProtocol::PSYNC;
+
+  double m_processingTimeWeight;
+  double m_loadWeight;
+  bool m_serviceEnabled;
 
 PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   // must be incremented when breaking changes are made to sync

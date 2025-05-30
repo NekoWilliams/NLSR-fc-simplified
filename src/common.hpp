@@ -28,6 +28,10 @@
 #include <memory>
 #include <type_traits>
 #include <utility>
+#include <string>
+#include <vector>
+#include <optional>
+#include <boost/multi_array.hpp>
 
 #include <ndn-cxx/name.hpp>
 #include <ndn-cxx/util/exception.hpp>
@@ -38,6 +42,8 @@ namespace nlsr {
 using namespace ndn::time_literals;
 
 constexpr ndn::time::seconds TIME_ALLOWED_FOR_CANONIZATION = 4_s;
+
+using AdjMatrix = boost::multi_array<double, 2>;
 
 } // namespace nlsr
 
