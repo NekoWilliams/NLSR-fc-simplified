@@ -55,77 +55,66 @@ def options(opt):
                       help='Build unit tests')
 
 def configure(conf):
-    conf.load('compiler_cxx gnu_dirs')
-    conf.load('default-compiler-flags')
-    conf.load('coverage')
-    conf.load('boost')
+    conf.load(['compiler_cxx', 'gnu_dirs',
+               'default-compiler-flags', 'boost',
+               'doxygen', 'sphinx'])
 
-    # NDN-CXXのバージョン確認とパス設定
-    ndn_cxx_config = conf.check_cfg(package='libndn-cxx', args=['--cflags', '--libs'],
-                                  uselib_store='NDN_CXX', mandatory=True)
-    
-    # NDN-CXXのインクルードパスを取得して設定
-    if ndn_cxx_config:
-        includes = [path[2:] for path in ndn_cxx_config.split() if path.startswith('-I')]
-        conf.env.append_value('INCLUDES', includes)
-    
-    # NDN-CXXのバージョン情報を取得
-    ndn_cxx_version = conf.check_cfg(package='libndn-cxx', args=['--modversion'],
-                                   uselib_store='NDN_CXX_VERSION', mandatory=True).strip()
-    version_parts = ndn_cxx_version.split('.')
-    conf.define('NDNCXX_VERSION_MAJOR', version_parts[0])
-    conf.define('NDNCXX_VERSION_MINOR', version_parts[1])
-    conf.define('NDNCXX_VERSION_PATCH', version_parts[2] if len(version_parts) > 2 else '0')
+    conf.env.WITH_TESTS = conf.options.with_tests
 
-    # Boostの確認
-    conf.check_boost(lib='system filesystem')
+    conf.find_program('dot', mandatory=False)
 
-    # PSyncの確認とパス設定
-    psync_config = conf.check_cfg(package='PSync', args=['--cflags', '--libs'],
-                                uselib_store='PSYNC', mandatory=True)
-    
-    # PSyncのインクルードパスを設定
-    if psync_config:
-        includes = [path[2:] for path in psync_config.split() if path.startswith('-I')]
-        conf.env.append_value('INCLUDES', includes)
+    # Prefer pkgconf if it's installed
+    conf.find_program(['pkgconf', 'pkg-config'], var='PKGCONFIG')
 
-    # システム設定
-    conf.define('SYSCONFDIR', conf.env.SYSCONFDIR)
-    conf.define('DEFAULT_CONFIG_FILE', f'{conf.env.SYSCONFDIR}/ndn/nlsr.conf')
+    pkg_config_path = os.environ.get('PKG_CONFIG_PATH', f'{conf.env.LIBDIR}/pkgconfig')
+    conf.check_cfg(package='libndn-cxx', args=['libndn-cxx >= 0.9.0', '--cflags', '--libs'],
+                   uselib_store='NDN_CXX', pkg_config_path=pkg_config_path)
 
-    # ビルド設定
-    if conf.options.with_tests:
-        conf.define('HAVE_TESTS', 1)
-    if conf.options.with_chronosync:
-        conf.define('HAVE_CHRONOSYNC', 1)
+    conf.check_boost()
+    if conf.env.BOOST_VERSION_NUMBER < 107100:
+        conf.fatal('The minimum supported version of Boost is 1.71.0.\n'
+                   'Please upgrade your distribution or manually install a newer version of Boost.\n'
+                   'For more information, see https://redmine.named-data.net/projects/nfd/wiki/Boost')
+
+    if conf.env.WITH_TESTS:
+        conf.check_boost(lib='unit_test_framework', mt=True, uselib_store='BOOST_TESTS')
+
     if conf.options.with_psync:
-        conf.define('HAVE_PSYNC', 1)
-    if conf.options.with_svs:
-        conf.define('HAVE_SVS', 1)
+        conf.check_cfg(package='PSync', args=['PSync >= 0.5.0', '--cflags', '--libs'],
+                       uselib_store='PSYNC', pkg_config_path=pkg_config_path)
 
-    # 設定ファイルの生成
-    conf.write_config_header('src/config.hpp', remove=False)
+    if not conf.options.with_psync:
+        conf.fatal('Cannot compile without PSync support.\n'
+                   'Please enable PSync with --with-psync')
+
+    conf.check_compiler_flags()
+
+    conf.load('coverage')
+    conf.load('sanitizers')
+
+    conf.define_cond('WITH_TESTS', conf.env.WITH_TESTS)
+    conf.define('DEFAULT_CONFIG_FILE', f'{conf.env.SYSCONFDIR}/ndn/nlsr.conf')
+    conf.write_config_header('src/config.hpp')
 
 def build(bld):
+    version(bld)
+
+    bld.objects(
+        target='nlsr-objects',
+        source=bld.path.ant_glob('src/**/*.cpp', excl=['src/main.cpp']),
+        use='BOOST NDN_CXX PSYNC',
+        includes='. src',
+        export_includes='. src')
+
     bld.program(
         target='bin/nlsr',
-        source=bld.path.ant_glob('src/**/*.cpp'),
-        use='NDN_CXX BOOST PSYNC',
-        includes=['src'] + bld.env.INCLUDES,
-        install_path='${BINDIR}')
-
-    bld.install_files('${SYSCONFDIR}/ndn', 'nlsr.conf.sample')
-    bld.install_files('${SYSCONFDIR}/ndn', 'nlsr-auto-prefix.conf.sample')
+        source='src/main.cpp',
+        use='nlsr-objects')
 
     if bld.env.WITH_TESTS:
         bld.recurse('tests')
 
-    if bld.env.WITH_OTHER_TESTS:
-        bld.recurse('tests-integrated')
-
-    if bld.env.WITH_DOCS:
-        bld.recurse('docs')
-
+    bld.install_files('${SYSCONFDIR}/ndn', 'nlsr.conf.sample')
     bld.install_files('${SYSCONFDIR}/systemd/system', 'systemd/nlsr.service')
 
 def docs(bld):
@@ -187,12 +176,11 @@ def version(ctx):
             elif not GIT_TAG_PREFIX and ('.' in version_from_git or '-' in version_from_git):
                 Context.g_module.VERSION = version_from_git
             else:
-                # no tags matched (or we are in a shallow clone)
                 Context.g_module.VERSION = f'{VERSION_BASE}+git.{version_from_git}'
     except (OSError, subprocess.SubprocessError):
         pass
 
-    # fallback to the VERSION.info file, if it exists and is not empty
+    # fallback to the VERSION.info file
     version_from_file = ''
     version_file = ctx.path.find_node('VERSION.info')
     if version_file is not None:
@@ -206,7 +194,6 @@ def version(ctx):
 
     # update VERSION.info if necessary
     if version_from_file == Context.g_module.VERSION:
-        # already up-to-date
         return
     if version_file is None:
         version_file = ctx.path.make_node('VERSION.info')
