@@ -56,39 +56,44 @@ def options(opt):
 
 def configure(conf):
     conf.load(['compiler_cxx', 'gnu_dirs',
-               'default-compiler-flags', 'boost',
-               'doxygen', 'sphinx'])
+               'default-compiler-flags', 'boost'])
 
     conf.env.WITH_TESTS = conf.options.with_tests
-
-    conf.find_program('dot', mandatory=False)
 
     # Prefer pkgconf if it's installed
     conf.find_program(['pkgconf', 'pkg-config'], var='PKGCONFIG')
 
-    pkg_config_path = os.environ.get('PKG_CONFIG_PATH', f'{conf.env.LIBDIR}/pkgconfig')
-    conf.check_cfg(package='libndn-cxx', args=['libndn-cxx >= 0.9.0', '--cflags', '--libs'],
-                   uselib_store='NDN_CXX', pkg_config_path=pkg_config_path)
+    # NDN-CXXの設定
+    pkg_config_path = [
+        '/usr/local/lib/pkgconfig',
+        '/usr/lib/pkgconfig',
+        os.environ.get('PKG_CONFIG_PATH', '')
+    ]
+    pkg_config_path = ':'.join(filter(None, pkg_config_path))
 
-    conf.check_boost()
-    if conf.env.BOOST_VERSION_NUMBER < 107100:
-        conf.fatal('The minimum supported version of Boost is 1.71.0.\n'
-                   'Please upgrade your distribution or manually install a newer version of Boost.\n'
-                   'For more information, see https://redmine.named-data.net/projects/nfd/wiki/Boost')
+    conf.check_cfg(package='libndn-cxx',
+                  args=['--cflags', '--libs'],
+                  uselib_store='NDN_CXX',
+                  pkg_config_path=pkg_config_path)
 
-    if conf.env.WITH_TESTS:
-        conf.check_boost(lib='unit_test_framework', mt=True, uselib_store='BOOST_TESTS')
+    # Boostの確認
+    conf.check_boost(lib='system filesystem')
 
-    if conf.options.with_psync:
-        conf.check_cfg(package='PSync', args=['PSync >= 0.5.0', '--cflags', '--libs'],
-                       uselib_store='PSYNC', pkg_config_path=pkg_config_path)
+    # PSyncの確認
+    conf.check_cfg(package='PSync',
+                  args=['--cflags', '--libs'],
+                  uselib_store='PSYNC',
+                  pkg_config_path=pkg_config_path)
 
-    if not conf.options.with_psync:
-        conf.fatal('Cannot compile without PSync support.\n'
-                   'Please enable PSync with --with-psync')
+    # インクルードパスの設定
+    includes = ['/usr/local/include', '/usr/include']
+    conf.env.append_value('INCLUDES', includes)
+
+    # コンパイラフラグの設定
+    conf.env.append_value('CXXFLAGS', ['-I' + path for path in includes])
+    conf.env.append_value('CXXFLAGS', ['-std=c++17'])
 
     conf.check_compiler_flags()
-
     conf.load('coverage')
     conf.load('sanitizers')
 
@@ -99,12 +104,14 @@ def configure(conf):
 def build(bld):
     version(bld)
 
+    includes = ['src'] + bld.env.INCLUDES
+
     bld.objects(
         target='nlsr-objects',
         source=bld.path.ant_glob('src/**/*.cpp', excl=['src/main.cpp']),
         use='BOOST NDN_CXX PSYNC',
-        includes='. src',
-        export_includes='. src')
+        includes=includes,
+        export_includes=includes)
 
     bld.program(
         target='bin/nlsr',
