@@ -22,7 +22,16 @@
 #ifndef NLSR_TLV_NLSR_HPP
 #define NLSR_TLV_NLSR_HPP
 
-namespace nlsr::tlv {
+#include "common.hpp"
+
+namespace nlsr {
+namespace tlv {
+
+// 既存のTLV定義を使用
+using nlsr::tlv::Name;
+using nlsr::tlv::NameLsa;
+using nlsr::tlv::ProcessingTime;
+using nlsr::tlv::LoadIndex;
 
 /*! The TLV block types that NLSR uses to encode/decode LSA types. The
  *  way NLSR encodes LSAs to TLV is by encoding each element of the
@@ -30,28 +39,23 @@ namespace nlsr::tlv {
  *  used in the LSDB Status Dataset.
  */
 enum {
-  Lsa                         = 128,
-  SequenceNumber              = 130,
-  AdjacencyLsa                = 131,
-  Adjacency                   = 132,
-  CoordinateLsa               = 133,
-  CostDouble                  = 134,
-  HyperbolicRadius            = 135,
-  HyperbolicAngle             = 136,
-  NameLsa                     = 137,
-  LsdbStatus                  = 138,
-  ExpirationTime              = 139,
-  Cost                        = 140,
-  Uri                         = 141,
-  NextHop                     = 143,
-  RoutingTable                = 144,
-  RoutingTableEntry           = 145,
-  PrefixInfo                  = 146,
-  ServiceName                 = 150,
-  ProcessingTime              = 151,
-  LoadIndex                   = 152
+  Lsa = 136,
+  CoordinatorConfirm = 138,
+  CoordinatorAck = 139,
+  Certificate = 140,
+  AdjacencyLsa = 141,
+  CoordinateLsa = 142,
+  PrefixAnnouncement = 143,
+  PrefixRetraction = 144,
+  PrefixUpdate = 145,
+  SequenceNumber = 146,
+  ExpirationTime = 147,
+  RouterName = 148,
+  Uri = 149,
+  Cost = 150
 };
 
-} // namespace nlsr::tlv
+} // namespace tlv
+} // namespace nlsr
 
 #endif // NLSR_TLV_NLSR_HPP

@@ -51,7 +51,7 @@ public:
   NameLsa() = default;
 
   NameLsa(const ndn::Name& originRouter, uint64_t sequenceNumber,
-          const ndn::time::system_clock::TimePoint& expirationTime,
+          const ndn::time::system_clock::time_point& expirationTime,
           const NamePrefixList& npl,
           double processingTime = 0.0,
           double loadIndex = 0.0)
@@ -89,7 +89,7 @@ public:
   void
   removeName(const ndn::Name& name)
   {
-    m_npl.remove(name);
+    m_npl.erase(name);
   }
 
   bool

@@ -21,6 +21,7 @@
 #ifndef NLSR_COMMON_HPP
 #define NLSR_COMMON_HPP
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -34,6 +35,8 @@
 
 namespace nlsr {
 
+using namespace ndn::time_literals;
+
 namespace tlv {
 enum {
   Name = 7,
@@ -45,6 +48,9 @@ enum {
 
 using std::size_t;
 using std::uint64_t;
+
+inline constexpr ndn::time::seconds GRACE_PERIOD = 10_s;
+inline constexpr ndn::time::seconds TIME_ALLOWED_FOR_CANONIZATION = 4_s;
 
 } // namespace nlsr
 
