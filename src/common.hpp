@@ -21,29 +21,30 @@
 #ifndef NLSR_COMMON_HPP
 #define NLSR_COMMON_HPP
 
-#include <cstddef>
 #include <cstdint>
-#include <functional>
-#include <iterator>
 #include <memory>
-#include <type_traits>
-#include <utility>
 #include <string>
+#include <tuple>
 #include <vector>
-#include <optional>
-#include <boost/multi_array.hpp>
-
+#include <list>
 #include <ndn-cxx/name.hpp>
-#include <ndn-cxx/util/exception.hpp>
+#include <ndn-cxx/encoding/block.hpp>
 #include <ndn-cxx/util/time.hpp>
+#include <boost/operators.hpp>
 
 namespace nlsr {
 
-using namespace ndn::time_literals;
+namespace tlv {
+enum {
+  Name = 7,
+  NameLsa = 128,
+  ProcessingTime = 129,
+  LoadIndex = 130,
+};
+} // namespace tlv
 
-constexpr ndn::time::seconds TIME_ALLOWED_FOR_CANONIZATION = 4_s;
-
-using AdjMatrix = boost::multi_array<double, 2>;
+using std::size_t;
+using std::uint64_t;
 
 } // namespace nlsr
 

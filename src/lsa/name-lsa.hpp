@@ -23,8 +23,8 @@
 #define NLSR_LSA_NAME_LSA_HPP
 
 #include "lsa.hpp"
-#include "name-prefix-list.hpp"
-
+#include "../name-prefix-list.hpp"
+#include <ndn-cxx/util/time.hpp>
 #include <boost/operators.hpp>
 
 namespace nlsr {
@@ -42,31 +42,24 @@ namespace nlsr {
 class NameLsa : public Lsa, private boost::equality_comparable<NameLsa>
 {
 public:
+  class Error : public Lsa::Error
+  {
+  public:
+    using Lsa::Error::Error;
+  };
+
   NameLsa() = default;
 
-  NameLsa(const ndn::Name& originRouter, uint64_t seqNo,
-          const ndn::time::system_clock::time_point& timepoint,
-          const NamePrefixList& npl);
-
-  explicit
-  NameLsa(const ndn::Block& block);
-
-  Lsa::Type
-  getType() const override
+  NameLsa(const ndn::Name& originRouter, uint64_t sequenceNumber,
+          const ndn::time::system_clock::TimePoint& expirationTime,
+          const NamePrefixList& npl,
+          double processingTime = 0.0,
+          double loadIndex = 0.0)
+    : Lsa(originRouter, sequenceNumber, expirationTime)
+    , m_npl(npl)
+    , m_processingTime(processingTime)
+    , m_loadIndex(loadIndex)
   {
-    return type();
-  }
-
-  static constexpr Lsa::Type
-  type()
-  {
-    return Lsa::Type::NAME;
-  }
-
-  NamePrefixList&
-  getNpl()
-  {
-    return m_npl;
   }
 
   const NamePrefixList&
@@ -75,64 +68,10 @@ public:
     return m_npl;
   }
 
-  void
-  addName(const PrefixInfo& name)
-  {
-    m_wire.reset();
-    m_npl.insert(name);
-  }
-
-  void
-  removeName(const PrefixInfo& name)
-  {
-    m_wire.reset();
-    m_npl.erase(name.getName());
-  }
-
-  template<ndn::encoding::Tag TAG>
-  size_t
-  wireEncode(ndn::EncodingImpl<TAG>& block) const;
-
-  const ndn::Block&
-  wireEncode() const override;
-
-  void
-  wireDecode(const ndn::Block& wire);
-
-  std::tuple<bool, std::list<PrefixInfo>, std::list<PrefixInfo>>
-  update(const std::shared_ptr<Lsa>& lsa) override;
-
-  void
-  setServiceName(const std::string& name)
-  {
-    m_serviceName = name;
-    m_wire.reset();
-  }
-
-  const std::string&
-  getServiceName() const
-  {
-    return m_serviceName;
-  }
-
-  void
-  setProcessingTime(double time)
-  {
-    m_processingTime = time;
-    m_wire.reset();
-  }
-
   double
   getProcessingTime() const
   {
     return m_processingTime;
-  }
-
-  void
-  setLoadIndex(double load)
-  {
-    m_loadIndex = load;
-    m_wire.reset();
   }
 
   double
@@ -141,26 +80,46 @@ public:
     return m_loadIndex;
   }
 
-private:
   void
-  print(std::ostream& os) const override;
-
-private: // non-member operators
-  // NOTE: the following "hidden friend" operators are available via
-  //       argument-dependent lookup only and must be defined inline.
-  // boost::equality_comparable provides != operator.
-
-  friend bool
-  operator==(const NameLsa& lhs, const NameLsa& rhs)
+  addName(const ndn::Name& name)
   {
-    return lhs.m_npl == rhs.m_npl;
+    m_npl.insert(name);
   }
 
+  void
+  removeName(const ndn::Name& name)
+  {
+    m_npl.remove(name);
+  }
+
+  bool
+  isEqualContent(const NameLsa& other) const;
+
+  template<ndn::encoding::Tag TAG>
+  size_t
+  wireEncode(ndn::encoding::EncodingImpl<TAG>& encoder) const;
+
+  const ndn::Block&
+  wireEncode() const;
+
+  void
+  wireDecode(const ndn::Block& wire);
+
+  virtual std::tuple<bool, std::list<PrefixInfo>, std::list<PrefixInfo>>
+  update(const std::shared_ptr<Lsa>& lsa) override;
+
 private:
+  static double
+  decodeDouble(const ndn::Block& block)
+  {
+    return ndn::encoding::readDouble(block);
+  }
+
   NamePrefixList m_npl;
-  std::string m_serviceName;
-  double m_processingTime{0.0};
-  double m_loadIndex{0.0};
+  double m_processingTime;
+  double m_loadIndex;
+
+  mutable ndn::Block m_wire;
 };
 
 NDN_CXX_DECLARE_WIRE_ENCODE_INSTANTIATIONS(NameLsa);
