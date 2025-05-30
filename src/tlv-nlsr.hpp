@@ -52,7 +52,10 @@ enum {
   ExpirationTime = 147,
   RouterName = 148,
   Uri = 149,
-  Cost = 150
+  Cost = 150,
+  NextHop = 151,
+  RoutingTable = 152,
+  RoutingTableEntry = 153
 };
 
 } // namespace tlv

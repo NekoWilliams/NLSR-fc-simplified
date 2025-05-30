@@ -33,6 +33,11 @@
 #include <ndn-cxx/util/time.hpp>
 #include <boost/operators.hpp>
 
+// NDNライブラリのインクルードパスを修正
+#ifdef HAVE_CONFIG_H
+#include "config.hpp"
+#endif
+
 namespace nlsr {
 
 using namespace ndn::time_literals;

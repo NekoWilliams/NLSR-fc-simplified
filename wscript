@@ -55,117 +55,44 @@ def options(opt):
                       help='Build unit tests')
 
 def configure(conf):
-    conf.load(['compiler_cxx', 'gnu_dirs',
-               'default-compiler-flags', 'boost',
-               'doxygen', 'sphinx'])
-
-    conf.env.WITH_TESTS = conf.options.with_tests
-
-    conf.find_program('dot', mandatory=False)
-
-    # Prefer pkgconf if it's installed, because it gives more correct results
-    # on Fedora/CentOS/RHEL/etc. See https://bugzilla.redhat.com/show_bug.cgi?id=1953348
-    # Store the result in env.PKGCONFIG, which is the variable used inside check_cfg()
-    conf.find_program(['pkgconf', 'pkg-config'], var='PKGCONFIG')
-
-    pkg_config_path = os.environ.get('PKG_CONFIG_PATH', f'{conf.env.LIBDIR}/pkgconfig')
-    conf.check_cfg(package='libndn-cxx', args=['libndn-cxx >= 0.9.0', '--cflags', '--libs'],
-                   uselib_store='NDN_CXX', pkg_config_path=pkg_config_path)
-
-    conf.check_boost()
-    if conf.env.BOOST_VERSION_NUMBER < 107100:
-        conf.fatal('The minimum supported version of Boost is 1.71.0.\n'
-                   'Please upgrade your distribution or manually install a newer version of Boost.\n'
-                   'For more information, see https://redmine.named-data.net/projects/nfd/wiki/Boost')
-
-    if conf.env.WITH_TESTS:
-        conf.check_boost(lib='unit_test_framework', mt=True, uselib_store='BOOST_TESTS')
-
-    if conf.options.with_chronosync:
-        conf.check_cfg(package='ChronoSync', args=['ChronoSync >= 0.5.6', '--cflags', '--libs'],
-                       uselib_store='CHRONOSYNC', pkg_config_path=pkg_config_path)
-
-    if conf.options.with_psync:
-        conf.check_cfg(package='PSync', args=['PSync >= 0.5.0', '--cflags', '--libs'],
-                       uselib_store='PSYNC', pkg_config_path=pkg_config_path)
-
-    if conf.options.with_svs:
-        conf.check_cfg(package='libndn-svs', args=['libndn-svs >= 0.1.0', '--cflags', '--libs'],
-                       uselib_store='SVS', pkg_config_path=pkg_config_path)
-
-    if not any((conf.options.with_chronosync, conf.options.with_psync, conf.options.with_svs)):
-        conf.fatal('Cannot compile without any Sync protocol.\n'
-                   'Specify at least one of --with-psync or --with-svs or --with-chronosync')
-
-    if conf.env.WITH_TESTS and not conf.options.with_psync:
-        conf.fatal('--with-tests requires --with-psync')
-
-    conf.check_compiler_flags()
-
-    # Loading "late" to prevent tests from being compiled with profiling flags
+    conf.load('compiler_cxx gnu_dirs')
+    conf.load('default-compiler-flags')
     conf.load('coverage')
-    conf.load('sanitizers')
+    conf.load('boost')
 
-    conf.define_cond('WITH_TESTS', conf.env.WITH_TESTS)
-    conf.define('DEFAULT_CONFIG_FILE', f'{conf.env.SYSCONFDIR}/ndn/nlsr.conf')
-    # The config header will contain all defines that were added using conf.define()
-    # or conf.define_cond().  Everything that was added directly to conf.env.DEFINES
-    # will not appear in the config header, but will instead be passed directly to the
-    # compiler on the command line.
+    conf.check_cfg(package='libndn-cxx', args=['--cflags', '--libs'],
+                  uselib_store='NDN_CXX', mandatory=True)
+
+    conf.check_boost(lib='system filesystem')
+
+    conf.check_cfg(package='PSync', args=['--cflags', '--libs'],
+                  uselib_store='PSYNC', mandatory=True)
+
+    conf.define('SYSCONFDIR', conf.env.SYSCONFDIR)
+
     conf.write_config_header('config.hpp')
 
 def build(bld):
-    version(bld)
-
-    bld(features='subst',
-        name='version.hpp',
-        source='src/version.hpp.in',
-        target='src/version.hpp',
-        install_path=None,
-        VERSION_STRING=VERSION_BASE,
-        VERSION_BUILD=VERSION)
-
-    bld.objects(
-        target='nlsr-objects',
-        source=bld.path.ant_glob('src/**/*.cpp', excl=['src/main.cpp']),
-        use='BOOST NDN_CXX CHRONOSYNC PSYNC SVS',
-        includes='. src',
-        export_includes='. src')
-
     bld.program(
-        name='nlsr',
         target='bin/nlsr',
-        source='src/main.cpp',
-        use='nlsr-objects')
+        source=bld.path.ant_glob('src/**/*.cpp'),
+        use='NDN_CXX BOOST PSYNC',
+        includes='src',
+        install_path='${BINDIR}')
 
-    bld.program(
-        name='nlsrc',
-        target='bin/nlsrc',
-        source='tools/nlsrc.cpp',
-        use='nlsr-objects')
+    bld.install_files('${SYSCONFDIR}/ndn', 'nlsr.conf.sample')
+    bld.install_files('${SYSCONFDIR}/ndn', 'nlsr-auto-prefix.conf.sample')
 
     if bld.env.WITH_TESTS:
         bld.recurse('tests')
 
-    # Install sample config
-    bld.install_as('${SYSCONFDIR}/ndn/nlsr.conf.sample', 'nlsr.conf')
+    if bld.env.WITH_OTHER_TESTS:
+        bld.recurse('tests-integrated')
 
-    if Utils.unversioned_sys_platform() == 'linux':
-        bld(features='subst',
-            name='systemd-units',
-            source='systemd/nlsr.service.in',
-            target='systemd/nlsr.service')
+    if bld.env.WITH_DOCS:
+        bld.recurse('docs')
 
-    if bld.env.SPHINX_BUILD:
-        bld(features='sphinx',
-            name='manpages',
-            builder='man',
-            config='docs/conf.py',
-            outdir='docs/manpages',
-            source=bld.path.ant_glob('docs/manpages/*.rst'),
-            install_path='${MANDIR}',
-            version=VERSION_BASE,
-            release=VERSION)
+    bld.install_files('${SYSCONFDIR}/systemd/system', 'systemd/nlsr.service')
 
 def docs(bld):
     from waflib import Options

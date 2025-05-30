@@ -31,6 +31,17 @@
 #include "sequencing-manager.hpp"
 #include "statistics.hpp"
 #include "test-access-control.hpp"
+#include "route/routing-table.hpp"
+#include "route/routing-calculator.hpp"
+#include "route/routing-calculator-hyperbolic.hpp"
+#include "route/routing-calculator-link-state.hpp"
+#include "route/routing-calculator-service.hpp"
+#include "route/routing-calculator-weighted.hpp"
+#include "route/routing-calculator-hybrid.hpp"
+#include "route/routing-calculator-hybrid-weighted.hpp"
+#include "route/routing-calculator-hybrid-service.hpp"
+#include "route/routing-calculator-hybrid-weighted-service.hpp"
+#include "route/routing-calculator-hybrid-weighted-service-hybrid.hpp"
 
 #include <ndn-cxx/ims/in-memory-storage-fifo.hpp>
 #include <ndn-cxx/ims/in-memory-storage-persistent.hpp>
@@ -39,10 +50,12 @@
 #include <ndn-cxx/util/segment-fetcher.hpp>
 #include <ndn-cxx/util/signal.hpp>
 #include <ndn-cxx/util/time.hpp>
+#include <ndn-cxx/util/scheduler.hpp>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/composite_key.hpp>
 #include <boost/multi_index/hashed_index.hpp>
+#include <boost/multi_array.hpp>
 
 namespace nlsr {
 
@@ -56,9 +69,17 @@ enum class LsdbUpdate {
   REMOVED
 };
 
+using AdjMatrix = boost::multi_array<double, 2>;
+
 class Lsdb
 {
 public:
+  class Error : public std::runtime_error
+  {
+  public:
+    using std::runtime_error::runtime_error;
+  };
+
   Lsdb(ndn::Face& face, ndn::KeyChain& keyChain, ConfParameter& confParam);
 
   ~Lsdb();
@@ -371,6 +392,11 @@ PUBLIC_WITH_TESTS_ELSE_PRIVATE:
 
   static inline const ndn::time::steady_clock::time_point DEFAULT_LSA_RETRIEVAL_DEADLINE =
     ndn::time::steady_clock::time_point::min();
+
+  std::shared_ptr<RoutingTable> m_routingTable;
+  std::shared_ptr<RoutingCalculator> m_routingCalculator;
+  AdjMatrix m_adjMatrix;
+  ndn::time::seconds m_lsaExpirationTime;
 };
 
 } // namespace nlsr
