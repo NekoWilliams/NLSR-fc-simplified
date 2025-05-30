@@ -22,18 +22,56 @@
 #ifndef NLSR_TEST_ACCESS_CONTROL_HPP
 #define NLSR_TEST_ACCESS_CONTROL_HPP
 
+#ifdef HAVE_CONFIG_H
 #include "config.hpp"
-
-#ifdef WITH_TESTS
-#define VIRTUAL_WITH_TESTS virtual
-#define PUBLIC_WITH_TESTS_ELSE_PROTECTED public
-#define PUBLIC_WITH_TESTS_ELSE_PRIVATE public
-#define PROTECTED_WITH_TESTS_ELSE_PRIVATE protected
-#else
-#define VIRTUAL_WITH_TESTS
-#define PUBLIC_WITH_TESTS_ELSE_PROTECTED protected
-#define PUBLIC_WITH_TESTS_ELSE_PRIVATE private
-#define PROTECTED_WITH_TESTS_ELSE_PRIVATE private
 #endif
 
-#endif //NLSR_TEST_ACCESS_CONTROL_HPP
+#include <memory>
+#include <ndn-cxx/face.hpp>
+#include <ndn-cxx/security/key-chain.hpp>
+#include <ndn-cxx/security/signing-info.hpp>
+#include <ndn-cxx/security/v2/certificate.hpp>
+#include <ndn-cxx/security/v2/key-chain.hpp>
+#include <ndn-cxx/security/v2/validation-policy.hpp>
+#include <ndn-cxx/security/v2/validation-policy-accept-all.hpp>
+#include <ndn-cxx/security/v2/validation-policy-command-interest.hpp>
+#include <ndn-cxx/security/v2/validation-policy-config.hpp>
+#include <ndn-cxx/security/v2/validator.hpp>
+#include <ndn-cxx/security/v2/certificate-fetcher-direct.hpp>
+
+namespace nlsr {
+
+class TestAccessControl
+{
+public:
+  TestAccessControl()
+    : m_keyChain(ndn::KeyChain())
+    , m_validator(std::make_shared<ndn::security::v2::ValidationPolicyAcceptAll>(),
+                 std::make_shared<ndn::security::v2::CertificateFetcherDirect>(m_face))
+  {
+  }
+
+  virtual
+  ~TestAccessControl() = default;
+
+  ndn::KeyChain&
+  getKeyChain()
+  {
+    return m_keyChain;
+  }
+
+  ndn::security::v2::Validator&
+  getValidator()
+  {
+    return m_validator;
+  }
+
+private:
+  ndn::Face m_face;
+  ndn::KeyChain m_keyChain;
+  ndn::security::v2::Validator m_validator;
+};
+
+} // namespace nlsr
+
+#endif // NLSR_TEST_ACCESS_CONTROL_HPP

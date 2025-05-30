@@ -60,17 +60,41 @@ def configure(conf):
     conf.load('coverage')
     conf.load('boost')
 
+    # NDN-CXXのバージョン確認
     conf.check_cfg(package='libndn-cxx', args=['--cflags', '--libs'],
                   uselib_store='NDN_CXX', mandatory=True)
+    
+    # NDN-CXXのバージョン情報を取得
+    ndn_cxx_version = conf.check_cfg(package='libndn-cxx', args=['--modversion'],
+                                   uselib_store='NDN_CXX_VERSION', mandatory=True).strip()
+    version_parts = ndn_cxx_version.split('.')
+    conf.define('NDNCXX_VERSION_MAJOR', version_parts[0])
+    conf.define('NDNCXX_VERSION_MINOR', version_parts[1])
+    conf.define('NDNCXX_VERSION_PATCH', version_parts[2] if len(version_parts) > 2 else '0')
 
+    # Boostの確認
     conf.check_boost(lib='system filesystem')
 
+    # PSyncの確認
     conf.check_cfg(package='PSync', args=['--cflags', '--libs'],
                   uselib_store='PSYNC', mandatory=True)
 
+    # システム設定
     conf.define('SYSCONFDIR', conf.env.SYSCONFDIR)
+    conf.define('DEFAULT_CONFIG_FILE', f'{conf.env.SYSCONFDIR}/ndn/nlsr.conf')
 
-    conf.write_config_header('config.hpp')
+    # ビルド設定
+    if conf.options.with_tests:
+        conf.define('HAVE_TESTS', 1)
+    if conf.options.with_chronosync:
+        conf.define('HAVE_CHRONOSYNC', 1)
+    if conf.options.with_psync:
+        conf.define('HAVE_PSYNC', 1)
+    if conf.options.with_svs:
+        conf.define('HAVE_SVS', 1)
+
+    # 設定ファイルの生成
+    conf.write_config_header('src/config.hpp', remove=False)
 
 def build(bld):
     bld.program(

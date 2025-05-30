@@ -1,0 +1,27 @@
+#ifndef NLSR_CONFIG_HPP
+#define NLSR_CONFIG_HPP
+
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
+namespace nlsr {
+
+// NDN-CXXのバージョン要件
+#define NLSR_WITH_NDNCXX_VERSION_MIN_MAJOR ${NDNCXX_VERSION_MAJOR}
+#define NLSR_WITH_NDNCXX_VERSION_MIN_MINOR ${NDNCXX_VERSION_MINOR}
+#define NLSR_WITH_NDNCXX_VERSION_MIN_PATCH ${NDNCXX_VERSION_PATCH}
+
+// システム設定
+#define SYSCONFDIR "${SYSCONFDIR}"
+#define DEFAULT_CONFIG_FILE "${SYSCONFDIR}/ndn/nlsr.conf"
+
+// ビルド設定
+#cmakedefine HAVE_TESTS
+#cmakedefine HAVE_CHRONOSYNC
+#cmakedefine HAVE_PSYNC
+#cmakedefine HAVE_SVS
+
+} // namespace nlsr
+
+#endif // NLSR_CONFIG_HPP 
