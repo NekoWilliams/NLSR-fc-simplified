@@ -60,9 +60,14 @@ def configure(conf):
     conf.load('coverage')
     conf.load('boost')
 
-    # NDN-CXXのバージョン確認
-    conf.check_cfg(package='libndn-cxx', args=['--cflags', '--libs'],
-                  uselib_store='NDN_CXX', mandatory=True)
+    # NDN-CXXのバージョン確認とパス設定
+    ndn_cxx_config = conf.check_cfg(package='libndn-cxx', args=['--cflags', '--libs'],
+                                  uselib_store='NDN_CXX', mandatory=True)
+    
+    # NDN-CXXのインクルードパスを取得して設定
+    if ndn_cxx_config:
+        includes = [path[2:] for path in ndn_cxx_config.split() if path.startswith('-I')]
+        conf.env.append_value('INCLUDES', includes)
     
     # NDN-CXXのバージョン情報を取得
     ndn_cxx_version = conf.check_cfg(package='libndn-cxx', args=['--modversion'],
@@ -75,9 +80,14 @@ def configure(conf):
     # Boostの確認
     conf.check_boost(lib='system filesystem')
 
-    # PSyncの確認
-    conf.check_cfg(package='PSync', args=['--cflags', '--libs'],
-                  uselib_store='PSYNC', mandatory=True)
+    # PSyncの確認とパス設定
+    psync_config = conf.check_cfg(package='PSync', args=['--cflags', '--libs'],
+                                uselib_store='PSYNC', mandatory=True)
+    
+    # PSyncのインクルードパスを設定
+    if psync_config:
+        includes = [path[2:] for path in psync_config.split() if path.startswith('-I')]
+        conf.env.append_value('INCLUDES', includes)
 
     # システム設定
     conf.define('SYSCONFDIR', conf.env.SYSCONFDIR)
@@ -101,7 +111,7 @@ def build(bld):
         target='bin/nlsr',
         source=bld.path.ant_glob('src/**/*.cpp'),
         use='NDN_CXX BOOST PSYNC',
-        includes='src',
+        includes=['src'] + bld.env.INCLUDES,
         install_path='${BINDIR}')
 
     bld.install_files('${SYSCONFDIR}/ndn', 'nlsr.conf.sample')
