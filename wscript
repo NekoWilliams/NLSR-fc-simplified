@@ -21,7 +21,7 @@ NLSR, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
 import subprocess
-from waflib import Context, Logs, Utils
+from waflib import Context, Logs, Utils, Configure
 
 VERSION = '24.08'
 APPNAME = 'nlsr'
@@ -30,8 +30,7 @@ GIT_TAG_PREFIX = 'NLSR-'
 def options(opt):
     opt.load(['compiler_cxx', 'gnu_dirs'])
     opt.load(['default-compiler-flags',
-              'coverage', 'sanitizers', 'boost',
-              'doxygen', 'sphinx'],
+              'coverage', 'sanitizers', 'boost'],
              tooldir=['.waf-tools'])
 
     optgrp = opt.add_option_group('NLSR Options')
@@ -54,6 +53,30 @@ def options(opt):
     optgrp.add_option('--with-tests', action='store_true', default=False,
                       help='Build unit tests')
 
+def find_ndn_cxx(conf):
+    # NDN-CXXのインストールパスを探索
+    search_paths = [
+        '/usr/local',
+        '/usr',
+        '/opt/ndn',
+        '/opt/local',
+        os.environ.get('NDN_PREFIX', ''),
+    ]
+    search_paths = [p for p in search_paths if p]  # 空のパスを除外
+
+    for path in search_paths:
+        include_path = os.path.join(path, 'include')
+        lib_path = os.path.join(path, 'lib')
+        pkgconfig_path = os.path.join(lib_path, 'pkgconfig')
+
+        if os.path.exists(os.path.join(include_path, 'ndn-cxx')):
+            conf.env.append_value('INCLUDES', [include_path])
+            conf.env.append_value('LIBPATH', [lib_path])
+            if os.path.exists(pkgconfig_path):
+                conf.env.append_value('PKG_CONFIG_PATH', [pkgconfig_path])
+            return True
+    return False
+
 def configure(conf):
     conf.load(['compiler_cxx', 'gnu_dirs',
                'default-compiler-flags', 'boost'])
@@ -63,18 +86,30 @@ def configure(conf):
     # Prefer pkgconf if it's installed
     conf.find_program(['pkgconf', 'pkg-config'], var='PKGCONFIG')
 
-    # NDN-CXXの設定
+    # NDN-CXXの検索とパス設定
+    if not find_ndn_cxx(conf):
+        conf.fatal('Could not find NDN-CXX installation')
+
     pkg_config_path = [
         '/usr/local/lib/pkgconfig',
         '/usr/lib/pkgconfig',
-        os.environ.get('PKG_CONFIG_PATH', '')
+        '/opt/ndn/lib/pkgconfig',
+        '/opt/local/lib/pkgconfig'
     ]
+    if 'PKG_CONFIG_PATH' in os.environ:
+        pkg_config_path.append(os.environ['PKG_CONFIG_PATH'])
+    if conf.env.PKG_CONFIG_PATH:
+        pkg_config_path.extend(conf.env.PKG_CONFIG_PATH)
+
     pkg_config_path = ':'.join(filter(None, pkg_config_path))
 
-    conf.check_cfg(package='libndn-cxx',
-                  args=['--cflags', '--libs'],
-                  uselib_store='NDN_CXX',
-                  pkg_config_path=pkg_config_path)
+    try:
+        conf.check_cfg(package='libndn-cxx',
+                      args=['--cflags', '--libs'],
+                      uselib_store='NDN_CXX',
+                      pkg_config_path=pkg_config_path)
+    except conf.errors.ConfigurationError:
+        conf.fatal('Could not find libndn-cxx using pkg-config')
 
     # Boostの確認
     conf.check_boost(lib='system filesystem')
@@ -85,12 +120,7 @@ def configure(conf):
                   uselib_store='PSYNC',
                   pkg_config_path=pkg_config_path)
 
-    # インクルードパスの設定
-    includes = ['/usr/local/include', '/usr/include']
-    conf.env.append_value('INCLUDES', includes)
-
     # コンパイラフラグの設定
-    conf.env.append_value('CXXFLAGS', ['-I' + path for path in includes])
     conf.env.append_value('CXXFLAGS', ['-std=c++17'])
 
     conf.check_compiler_flags()
@@ -104,14 +134,12 @@ def configure(conf):
 def build(bld):
     version(bld)
 
-    includes = ['src'] + bld.env.INCLUDES
-
     bld.objects(
         target='nlsr-objects',
         source=bld.path.ant_glob('src/**/*.cpp', excl=['src/main.cpp']),
         use='BOOST NDN_CXX PSYNC',
-        includes=includes,
-        export_includes=includes)
+        includes='. src',
+        export_includes='. src')
 
     bld.program(
         target='bin/nlsr',
