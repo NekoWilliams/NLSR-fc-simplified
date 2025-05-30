@@ -262,47 +262,47 @@ public:
  * @brief Compute the shortest path from a source router to every other router.
  */
 DijkstraResult
-calculateDijkstraPath(const AdjMatrix& matrix, int sourceRouter)
+calculateDijkstraPath(const AdjMatrix& matrix, int sourceRouter, const Lsdb& lsdb, const NameMap& map)
 {
-  size_t nRouters = matrix.size();
+  size_t nRouters = matrix.shape()[0];
+
   std::vector<int> parent(nRouters, EMPTY_PARENT);
-  // Array where the ith element is the distance to the router with mapping no i.
   std::vector<double> distance(nRouters, INF_DISTANCE);
-  // Each cell represents the router with that mapping no.
   std::vector<int> q(nRouters);
-  for (size_t i = 0 ; i < nRouters; ++i) {
-    q[i] = static_cast<int>(i);
+
+  // Initialize
+  parent[sourceRouter] = sourceRouter;
+  distance[sourceRouter] = 0;
+
+  for (size_t i = 0; i < nRouters; i++) {
+    q[i] = i;
   }
 
-  size_t head = 0;
-  // Distance to source from source is always 0.
-  distance[sourceRouter] = 0;
-  sortQueueByDistance(q, distance, head);
-  // While we haven't visited every node.
-  while (head < nRouters) {
-    int u = q[head]; // Set u to be the current node pointed to by head.
-    if (distance[u] == INF_DISTANCE) {
-      break; // This can only happen when there are no accessible nodes.
-    }
-    // Iterate over the adjacent nodes to u.
-    for (size_t v = 0; v < nRouters; ++v) {
-      // If the current node is accessible and we haven't visited it yet.
-      if (matrix[u][v] >= 0 && isNotExplored(q, v, head + 1)) {
-        // And if the distance to this node + from this node to v
-        // is less than the distance from our source node to v
-        // that we got when we built the adj LSAs
-        double newDistance = distance[u] + matrix[u][v];
-        if (newDistance < distance[v]) {
-          // Set the new distance
-          distance[v] = newDistance;
-          // Set how we get there.
+  size_t start = 0;
+  while (start < nRouters) {
+    sortQueueByDistance(q, distance, start);
+    int u = q[start];
+
+    for (size_t v = 0; v < nRouters; v++) {
+      if (matrix[u][v] != Adjacent::NON_ADJACENT_COST && isNotExplored(q, v, start + 1)) {
+        double linkCost = matrix[u][v];
+        
+        // Consider service function information in cost calculation
+        if (auto routerName = map.getRouterNameByMappingNo(v)) {
+          if (auto nameLsa = lsdb.findNameLsa(*routerName)) {
+            // Add weighted service metrics to link cost
+            linkCost += nameLsa->getLoadIndex() * 0.3;  // 30% weight for load
+            linkCost += nameLsa->getProcessingTime() * 0.7;  // 70% weight for processing time
+          }
+        }
+
+        if (distance[u] + linkCost < distance[v]) {
+          distance[v] = distance[u] + linkCost;
           parent[v] = u;
         }
       }
     }
-    // Increment the head position, resort the list by distance from where we are.
-    ++head;
-    sortQueueByDistance(q, distance, head);
+    ++start;
   }
 
   return DijkstraResult{std::move(parent), std::move(distance)};
@@ -362,7 +362,7 @@ calculateLinkStateRoutingPath(NameMap& map, RoutingTable& rt, ConfParameter& con
 
   if (confParam.getMaxFacesPerPrefix() == 1) {
     // In the single path case we can simply run Dijkstra's algorithm.
-    auto dr = calculateDijkstraPath(matrix, *sourceRouter);
+    auto dr = calculateDijkstraPath(matrix, *sourceRouter, lsdb, map);
     // Inform the routing table of the new next hops.
     addNextHopsToRoutingTable(rt, map, *sourceRouter, confParam.getAdjacencyList(), dr);
   }
@@ -375,7 +375,7 @@ calculateLinkStateRoutingPath(NameMap& map, RoutingTable& rt, ConfParameter& con
       simulateOneNeighbor(matrix, *sourceRouter, link);
       NLSR_LOG_DEBUG((PrintAdjMatrix{matrix, map}));
       // Do Dijkstra's algorithm using the current neighbor as your start.
-      auto dr = calculateDijkstraPath(matrix, *sourceRouter);
+      auto dr = calculateDijkstraPath(matrix, *sourceRouter, lsdb, map);
       // Update the routing table with the calculations.
       addNextHopsToRoutingTable(rt, map, *sourceRouter, confParam.getAdjacencyList(), dr);
     }

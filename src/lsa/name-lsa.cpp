@@ -45,13 +45,17 @@ NameLsa::wireEncode(ndn::EncodingImpl<TAG>& block) const
 {
   size_t totalLength = 0;
 
-  auto names = m_npl.getPrefixInfo();
-
-  for (auto it = names.rbegin();  it != names.rend(); ++it) {
-    totalLength += it->wireEncode(block);
+  // Encode service function chaining information
+  if (!m_serviceName.empty()) {
+    totalLength += prependStringBlock(block, nlsr::tlv::ServiceName, m_serviceName);
   }
+  totalLength += prependNonNegativeDoubleBlock(block, nlsr::tlv::ProcessingTime, m_processingTime);
+  totalLength += prependNonNegativeDoubleBlock(block, nlsr::tlv::LoadIndex, m_loadIndex);
 
-  totalLength += Lsa::wireEncode(block);
+  // Encode name prefix list
+  for (const auto& name : m_npl) {
+    totalLength += name.wireEncode(block);
+  }
 
   totalLength += block.prependVarNumber(totalLength);
   totalLength += block.prependVarNumber(nlsr::tlv::NameLsa);
@@ -89,28 +93,25 @@ NameLsa::wireDecode(const ndn::Block& wire)
   }
 
   m_wire.parse();
-
   auto val = m_wire.elements_begin();
 
-  if (val != m_wire.elements_end() && val->type() == nlsr::tlv::Lsa) {
-    Lsa::wireDecode(*val);
-    ++val;
-  }
-  else {
-    NDN_THROW(Error("Missing required Lsa field"));
-  }
-
-  NamePrefixList npl;
   for (; val != m_wire.elements_end(); ++val) {
-    if (val->type() == nlsr::tlv::PrefixInfo) {
-      //TODO: Implement this structure as a type instead and add decoding
-      npl.insert(PrefixInfo(*val));
+    if (val->type() == nlsr::tlv::ServiceName) {
+      m_serviceName = readString(*val);
+    }
+    else if (val->type() == nlsr::tlv::ProcessingTime) {
+      m_processingTime = readNonNegativeDouble(*val);
+    }
+    else if (val->type() == nlsr::tlv::LoadIndex) {
+      m_loadIndex = readNonNegativeDouble(*val);
+    }
+    else if (val->type() == nlsr::tlv::NameLsa) {
+      m_npl.wireDecode(*val);
     }
     else {
-      NDN_THROW(Error("Name", val->type()));
+      NDN_THROW(Error("Unexpected TLV type", val->type()));
     }
   }
-  m_npl = npl;
 }
 
 void
@@ -125,40 +126,23 @@ NameLsa::print(std::ostream& os) const
   }
 }
 
-std::tuple<bool, std::list<PrefixInfo>, std::list<PrefixInfo>>
+std::tuple<bool, std::list<ndn::Name>, std::list<ndn::Name>>
 NameLsa::update(const std::shared_ptr<Lsa>& lsa)
 {
   auto nlsa = std::static_pointer_cast<NameLsa>(lsa);
   bool updated = false;
 
-  // Obtain the set difference of the current and the incoming
-  // name prefix sets, and add those.
-
-  std::list<ndn::Name> newNames = nlsa->getNpl().getNames();
-  std::list<ndn::Name> oldNames = m_npl.getNames();
-  std::list<ndn::Name> nameRefToAdd;
-  std::list<PrefixInfo> namesToAdd;
-
-  std::set_difference(newNames.begin(), newNames.end(), oldNames.begin(), oldNames.end(),
-                      std::inserter(nameRefToAdd, nameRefToAdd.begin()));
-  for (const auto& name : nameRefToAdd) {
-    namesToAdd.push_back(nlsa->getNpl().getPrefixInfoForName(name));
-    addName(nlsa->getNpl().getPrefixInfoForName(name));
+  if (m_serviceName != nlsa->getServiceName() ||
+      m_processingTime != nlsa->getProcessingTime() ||
+      m_loadIndex != nlsa->getLoadIndex()) {
+    m_serviceName = nlsa->getServiceName();
+    m_processingTime = nlsa->getProcessingTime();
+    m_loadIndex = nlsa->getLoadIndex();
     updated = true;
   }
 
-  // Also remove any names that are no longer being advertised.
-  std::list<ndn::Name> nameRefToRemove;
-  std::list<PrefixInfo> namesToRemove;
-  std::set_difference(oldNames.begin(), oldNames.end(), newNames.begin(), newNames.end(),
-                      std::inserter(nameRefToRemove, nameRefToRemove.begin()));
-  for (const auto& name : nameRefToRemove) {
-    namesToRemove.push_back(m_npl.getPrefixInfoForName(name));
-    removeName(m_npl.getPrefixInfoForName(name));
-
-    updated = true;
-  }
-  return {updated, namesToAdd, namesToRemove};
+  auto [nameUpdated, namesToAdd, namesToRemove] = m_npl.update(nlsa->getNpl());
+  return std::make_tuple(updated || nameUpdated, namesToAdd, namesToRemove);
 }
 
 } // namespace nlsr

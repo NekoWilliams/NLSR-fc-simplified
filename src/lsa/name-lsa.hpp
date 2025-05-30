@@ -102,6 +102,45 @@ public:
   std::tuple<bool, std::list<PrefixInfo>, std::list<PrefixInfo>>
   update(const std::shared_ptr<Lsa>& lsa) override;
 
+  void
+  setServiceName(const std::string& name)
+  {
+    m_serviceName = name;
+    m_wire.reset();
+  }
+
+  const std::string&
+  getServiceName() const
+  {
+    return m_serviceName;
+  }
+
+  void
+  setProcessingTime(double time)
+  {
+    m_processingTime = time;
+    m_wire.reset();
+  }
+
+  double
+  getProcessingTime() const
+  {
+    return m_processingTime;
+  }
+
+  void
+  setLoadIndex(double load)
+  {
+    m_loadIndex = load;
+    m_wire.reset();
+  }
+
+  double
+  getLoadIndex() const
+  {
+    return m_loadIndex;
+  }
+
 private:
   void
   print(std::ostream& os) const override;
@@ -119,6 +158,9 @@ private: // non-member operators
 
 private:
   NamePrefixList m_npl;
+  std::string m_serviceName;
+  double m_processingTime{0.0};
+  double m_loadIndex{0.0};
 };
 
 NDN_CXX_DECLARE_WIRE_ENCODE_INSTANTIATIONS(NameLsa);
